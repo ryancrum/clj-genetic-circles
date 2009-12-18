@@ -2,10 +2,11 @@
   '(java.awt Graphics Graphics2D Color Polygon)
   '(java.awt.image BufferedImage PixelGrabber)
   '(java.io File)
+  '(java.io FileInputStream)
   '(javax.imageio ImageIO)
   '(javax.swing JFrame JPanel JFileChooser))
 
-(defstruct image :height :width :pixels)
+(defstruct image :width :height :pixels)
 (defstruct circle :position :color :radius)
 
 (defn position-generator [img]
@@ -62,7 +63,7 @@
         fitnesses (apply sorted-map (interleave scores population))
         elite-count (* (:elitism settings) (count population))
         elites (take elite-count (vals fitnesses))]
-    [(first elites)
+    [{:shapes (first elites) :score (first (keys fitnesses))}
      (for [i (range (count population))]
        (mutate generator img (crossover (any elites) (any elites)) settings))]))
 
@@ -91,11 +92,9 @@
 (defn fitness [img individual]
   (let [indiv-pixels (grab-pixels (render individual img))
         src-pixels (:pixels img)]
-    (apply + (map - indiv-pixels src-pixels))))
+    (Math/abs (apply + (map - indiv-pixels src-pixels)))))
 
-(def best (ref nil))
-
-(defn run [settings img generator-fn fitness-fn]
+(defn run [settings fittest-ref counter-ref img generator-fn fitness-fn]
   (let [initial-population (for [i (range (:population-size settings))]
                              (generate-n generator-fn img (:shape-count settings)))
         fit (partial fitness-fn img)]
@@ -107,6 +106,30 @@
                                   settings)
             fittest (first breeding-results)
             new-population (second breeding-results)]
-        (dosync (ref-set best fittest))
+        (dosync (ref-set fittest-ref fittest))
+        (dosync (alter counter-ref + 1))
         (recur new-population)))))
 
+(def *stop-me* (ref false))
+
+(defn main [filename draw-agent fittest-ref]
+  (let [settings {:population-size 25
+                  :shape-count 100
+                  :elitism 0.4
+                  :mutate-probability 0.05}
+        selected-image (ImageIO/read (FileInputStream. filename))
+        img (struct image
+                    (.getWidth selected-image)
+                    (.getHeight selected-image)
+                    (grab-pixels selected-image))
+        fittest fittest-ref
+        counter (ref 0)]
+    (send-off draw-agent (fn [_] (run settings fittest counter img *generator* fitness)))
+    (loop [last-val @counter]
+      (let [ctr @counter]
+        (if (deref *stop-me*)
+          true
+          (do
+            (if (and (= 0 (mod ctr 2)) (not= ctr last-val))
+                (ImageIO/write (render (:shapes @fittest) img) "jpeg" (File. (str "/Users/rcrum/gen/img_" @counter ".jpg"))))
+            (recur ctr)))))))
