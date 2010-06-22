@@ -131,5 +131,5 @@
           true
           (do
             (if (and (= 0 (mod ctr 2)) (not= ctr last-val))
-                (ImageIO/write (render (:shapes @fittest) img) "jpeg" (File. (str "/Users/rcrum/gen/img_" @counter ".jpg"))))
+                (ImageIO/write (render (:shapes @fittest) img) "jpeg" (File. (str "./gen/img_" @counter ".jpg"))))
             (recur ctr)))))))
